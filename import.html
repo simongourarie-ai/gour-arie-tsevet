@@ -1,0 +1,24 @@
+<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>גור אריה | ייבוא נתונים לצוות</title><style>body{font-family:Arial,"Noto Sans Hebrew",sans-serif;background:#f6f7f9;color:#1f344e;padding:22px;line-height:1.7}main{max-width:630px;margin:30px auto;background:white;padding:27px;border-radius:21px;box-shadow:0 10px 30px #12345612}h1{margin-top:0}button{border:0;background:#173853;color:white;border-radius:10px;padding:13px 20px;font:inherit;cursor:pointer;margin:7px 0}button:disabled{opacity:.5}input{padding:12px;margin:16px 0;max-width:100%;display:block}section{background:#fff6e4;padding:13px;border-radius:12px;margin:14px 0}.muted{font-size:13px;color:#63758a}.success{color:#126e51;font-weight:bold}a{color:#1765a7}#tools{display:none}label{display:block;margin:10px 0}#result{white-space:pre-wrap}</style></head><body><main><h1>🦁 ייבוא ראשוני לגור אריה</h1><p>כל המידע הפרטי (כולל תמונות, דרכונים, ביטוח, אלרגיות ומידע רפואי) יישלח ישירות ל־Firestore, רק לאחר כניסת חבר צוות מורשה.</p><section><b>אזהרה:</b> אין להעלות קובץ נתונים פרטי ל־GitHub. בחירת הקובץ כאן נעשית מהמחשב שלכם בלבד.</section><p id="status">מתחברים...</p><button id="login">כניסה עם Google</button><div id="tools"><label>בחרו את קובץ <b>DONNEES_CONFIDENTIELLES_69_ELEVES.json</b><input type="file" id="file" accept=".json,application/json"></label><p id="preview" class="muted">טרם נבחר קובץ.</p><label><input type="checkbox" id="confirm" style="display:inline-block;margin:0 4px"> אני מאשר/ת שזהו קובץ נתונים רגיש לצוות בלבד, ושהייבוא יבוצע פעם אחת.</label><button id="start" disabled>ייבוא לענן</button><p id="result" class="muted"></p></div><p class="muted"><a href="index.html">← חזרה למערכת</a></p></main><script type="module">
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js';
+import {getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js';
+import {getFirestore,doc,getDoc,collection,getDocs,writeBatch,serverTimestamp} from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-firestore.js';
+import {firebaseConfig} from './firebase-config.js';
+const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app),status=document.getElementById('status'),login=document.getElementById('login');
+const file=document.getElementById('file'),preview=document.getElementById('preview'),start=document.getElementById('start'),confirm=document.getElementById('confirm'),result=document.getElementById('result');let roster=null,reports=[];
+login.onclick=async()=>{try{await signInWithPopup(auth,new GoogleAuthProvider())}catch(e){status.textContent=e.message}};
+onAuthStateChanged(auth,async user=>{document.getElementById('tools').style.display='none';login.style.display='block';if(!user){status.textContent='נדרשת כניסה עם Google';return}
+ try{const s=await getDoc(doc(db,'authorizedStaff',user.email));if(!s.exists()||s.data().active!==true)throw Error('החשבון עדיין לא ברשימת הצוות.');status.textContent='מורשה: '+user.email;login.style.display='none';document.getElementById('tools').style.display='block'}catch(e){status.textContent=e.message}});
+file.onchange=async()=>{roster=null;start.disabled=true;const f=file.files[0];if(!f)return;
+ try{const j=JSON.parse(await f.text());const a=j.students;if(!Array.isArray(a)||a.length===0||a.some(x=>!x.id)||new Set(a.map(x=>x.id)).size!==a.length)throw Error('פורמט הקובץ אינו תקין');roster=a;reports=Array.isArray(j.weekly)?j.weekly:[];
+ preview.textContent=a.length+' חניכים • '+a.filter(x=>x.photo).length+' תמונות • '+a.filter(x=>x.medicalInfo).length+' תיקים עם מידע רפואי • '+a.filter(x=>x.insuranceNumber).length+' מספרי ביטוח • '+reports.length+' סיכומים';start.disabled=false;
+ }catch(e){preview.textContent='שגיאה: '+e.message}};
+start.onclick=async()=>{if(!roster)return;if(!confirm.checked){alert('נדרש אישור לקובץ פרטי');return}
+ if(!window.confirm('לייבא '+roster.length+' כרטיסים? פעולה חוזרת יכולה לעדכן נתונים קיימים.'))return;
+ start.disabled=true;
+ try{const existing=await getDocs(collection(db,'students'));if(!existing.empty&&!window.confirm('קיימים כבר '+existing.size+' חניכים בענן. האם להחליף פרטים אלה?')){start.disabled=false;return}
+ const batch=writeBatch(db);for(const r of roster)batch.set(doc(db,'students',r.id),{...r,lastModifiedAt:serverTimestamp()},{merge:true});
+ for(const r of reports){if(!r.studentId||!r.week)continue;batch.set(doc(db,'weeklyReports',r.studentId+'_'+r.week),r,{merge:true})}
+ if(roster.length+reports.length>450)throw Error('הקובץ גדול מדי לייבוא אחד');
+ await batch.commit();result.textContent='✅ הייבוא הושלם. כל חברי הצוות המורשים יכולים כעת לצפות בכרטיסים ובמידע הרפואי.';result.className='success';
+ }catch(e){result.textContent='שגיאה: '+e.message;start.disabled=false}}
+</script></body></html>
